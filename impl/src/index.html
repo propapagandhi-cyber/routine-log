@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>習慣きろく</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="習慣きろく">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f3f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#10151d" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+/* Layout: one column (phone first). Header → people → tabs → the chosen view.
+   Palette and type follow the piano practice tracker (piano-log) so the two feel like one family. */
+:root {
+  --bg: #f3f5f9;
+  --surface: #ffffff;
+  --ink: #18202e;
+  --muted: #5d687a;
+  --line: #dde3ec;
+  --soft: #e9edf4;
+  --good: #0f9d74;
+  --bad: #c2410c;
+  --p0: #4f5bd5;
+  --p1: #0f9d74;
+  --p2: #e0730b;
+  --p3: #d1437a;
+  --p4: #1e86c6;
+  --font: "Hiragino Maru Gothic ProN", "M PLUS Rounded 1c", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --r: 16px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10151d; --surface: #19212d; --ink: #edf1f7; --muted: #9ba7b9; --line: #2b3546; --soft: #222c3a;
+    --good: #34c79a; --bad: #fb8c4c;
+    --p0: #8d96f2; --p1: #34c79a; --p2: #f59f45; --p3: #ef7aa6; --p4: #5cb6ea;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font); font-weight: 500;
+  font-size: 15px; line-height: 1.55; -webkit-text-size-adjust: 100%;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) max(16px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 28px) max(16px, env(safe-area-inset-left, 0px));
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid var(--p4); outline-offset: 2px; }
+.wrap { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.wrap > * { min-width: 0; }
+/* a view inside the page: no auto margins, or it would size to its widest table instead of the page
+   (wide tables scroll inside their panel) */
+.wrap .wrap { margin: 0; max-width: none; width: 100%; }
+.num { font-variant-numeric: tabular-nums; }
+
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
+header h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: .02em; line-height: 1.2; }
+.icon-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; width: 44px; height: 44px; display: grid; place-items: center; flex: none; }
+.icon-btn svg { width: 22px; height: 22px; }
+.sync { font-size: 12px; color: var(--muted); margin: -8px 0 0; min-height: 1.4em; }
+.sync.bad { color: var(--bad); font-weight: 700; }
+
+/* people */
+.people { display: grid; grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); gap: 10px; }
+.person { border: 2px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 10px 6px 8px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; transition: border-color .15s, transform .1s; }
+.person:active { transform: scale(.98); }
+.person[aria-pressed="true"] { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+.ring { --pct: 0; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center;
+  background: conic-gradient(var(--c) calc(var(--pct) * 1%), var(--soft) 0); }
+.ring .face { width: 42px; height: 42px; border-radius: 50%; background: var(--c); color: #fff; display: grid; place-items: center; font-size: 18px; font-weight: 800; }
+.person .name { font-weight: 800; font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person .prog { font-size: 12px; color: var(--muted); }
+
+/* tabs */
+.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--soft); border-radius: 14px; padding: 4px; }
+.tabs button { border: 0; background: transparent; border-radius: 10px; padding: 9px 4px; font-weight: 800; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+
+/* date bar */
+.datebar { display: grid; grid-template-columns: 44px 1fr 44px; gap: 8px; align-items: center; }
+.datebar .cur { position: relative; text-align: center; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; min-height: 44px;
+  display: flex; flex-direction: column; justify-content: center; padding: 4px 8px; }
+.datebar .cur b { font-size: 17px; font-weight: 800; line-height: 1.25; }
+.datebar .cur small { font-size: 12px; color: var(--muted); line-height: 1.2; }
+.datebar .cur.off small { color: var(--p3); }
+.datebar .cur input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; }
+.datebar button:disabled { opacity: .35; cursor: default; }
+.linkbtn { border: 0; background: transparent; color: var(--p4); font-weight: 700; padding: 4px 8px; align-self: center; text-decoration: underline; }
+
+/* panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+.panel h2 { margin: 0 0 10px; font-size: 16px; font-weight: 800; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.panel h2 span { font-size: 13px; color: var(--muted); font-weight: 700; }
+.items { display: flex; flex-direction: column; gap: 12px; }
+
+/* one item of the day */
+.item { border-left: 5px solid var(--line); }
+.item.done { border-left-color: var(--good); }
+.item.fail { border-left-color: var(--bad); }
+.ihead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ihead .iname { font-size: 17px; font-weight: 800; }
+.badge { font-size: 13px; font-weight: 800; border-radius: 999px; padding: 2px 10px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.badge.done { background: color-mix(in srgb, var(--good) 16%, var(--surface)); color: var(--ink); }
+.badge.fail { background: color-mix(in srgb, var(--bad) 16%, var(--surface)); color: var(--ink); }
+.inote { font-size: 12px; color: var(--muted); margin: 2px 0 0; white-space: pre-line; }
+.ictl { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+.chip { border: 2px solid var(--line); background: var(--surface); border-radius: 12px; padding: 8px 14px; min-height: 44px; font-weight: 700; }
+.chip[aria-pressed="true"] { border-color: var(--good); background: color-mix(in srgb, var(--good) 14%, var(--surface)); }
+.chip.no[aria-pressed="true"] { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, var(--surface)); }
+.chip.ghost { border-style: dashed; color: var(--muted); }
+.time { border: 2px solid var(--line); background: var(--surface); border-radius: 12px; padding: 6px 10px; min-height: 44px; font-size: 18px; font-weight: 800; min-width: 7.5em; }
+.sep { flex-basis: 100%; height: 0; }
+.lim { font-size: 12px; color: var(--muted); }
+.pianoval { font-size: 26px; font-weight: 800; line-height: 1.2; }
+.pianoval small { font-size: 13px; color: var(--muted); font-weight: 700; margin-left: 6px; }
+.meter { flex-basis: 100%; height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 4px; background: var(--good); }
+.ictl a { color: var(--p4); font-weight: 700; font-size: 13px; }
+textarea { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 10px 12px; min-height: 64px; resize: vertical; }
+
+/* month: achievement rows */
+.rates { display: flex; flex-direction: column; gap: 8px; }
+.rrow { display: grid; grid-template-columns: minmax(3.5em, 5.5em) 1fr 3.2em; gap: 10px; align-items: center; font-size: 14px; }
+.rrow .rname { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rrow .rpct { text-align: right; font-weight: 800; }
+.rrow .rdet { grid-column: 2 / 4; font-size: 12px; color: var(--muted); margin-top: -6px; }
+
+/* month table */
+.tablewrap { overflow-x: auto; padding: 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 6px; border-top: 1px solid var(--line); text-align: center; white-space: nowrap; }
+thead th { border-top: 0; font-size: 12px; color: var(--muted); font-weight: 700; position: sticky; top: 0; background: var(--surface); }
+.mt td.d, .mt th.d { text-align: left; padding-left: 14px; color: var(--muted); font-weight: 700; }
+.mt tr.off td.d { color: var(--p3); }
+.mt tr.today td.d { color: var(--ink); font-weight: 800; }
+.mt tbody tr { cursor: pointer; }
+.mt tbody tr:hover { background: color-mix(in srgb, var(--p4) 6%, transparent); }
+.mt td.done { background: color-mix(in srgb, var(--good) 12%, transparent); }
+.mt td.fail { background: color-mix(in srgb, var(--bad) 14%, transparent); font-weight: 800; }
+.mt td.memo { text-align: left; max-width: 12em; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-size: 12px; padding-right: 14px; }
+.mt tr.future { opacity: .4; }
+
+/* year grid: one hue, light → dark (steeper near 100%, where the months differ); the number is always shown */
+.yt th.i, .yt td.i { text-align: left; font-weight: 700; padding-left: 14px; }
+.yt td.cell { --v: 0; background: color-mix(in srgb, var(--good) calc(var(--v) * var(--v) * .0054% + 4%), var(--surface)); border: 2px solid var(--surface); border-radius: 6px; font-weight: 700; min-width: 2.6em; cursor: default; }
+.yt td.none { color: var(--muted); border: 2px solid var(--surface); }
+.yt th button { border: 0; background: transparent; color: var(--p4); font-weight: 700; padding: 2px 4px; text-decoration: underline; }
+.detail { font-size: 13px; color: var(--muted); min-height: 1.5em; margin: 8px 16px 12px; }
+.scale { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin: 0 16px 12px; }
+.scale i { width: 18px; height: 12px; border-radius: 3px; background: color-mix(in srgb, var(--good) calc(var(--v) * var(--v) * .0054% + 4%), var(--surface)); border: 1px solid var(--line); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 10px; }
+.tile { background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+.tile .tl { font-size: 12px; color: var(--muted); font-weight: 700; }
+.tile .tv { font-size: 24px; font-weight: 800; line-height: 1.2; }
+.tile .tv small { font-size: 13px; font-weight: 700; margin-left: 2px; }
+
+/* settings */
+dialog { border: 0; border-radius: 20px; padding: 0; width: min(640px, calc(100vw - 20px)); max-height: calc(100dvh - 24px); background: var(--bg); color: var(--ink); }
+dialog::backdrop { background: rgb(10 14 20 / .5); }
+.dhead { position: sticky; top: 0; z-index: 2; background: var(--bg); display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.dhead h2 { margin: 0; font-size: 19px; font-weight: 800; }
+.dbody { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.dbody h3 { margin: 0 0 8px; font-size: 15px; font-weight: 800; }
+.dbody p { margin: 0 0 8px; font-size: 13px; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); font-weight: 700; min-width: 0; flex: 1 1 8em; }
+.field input, .field select, .field textarea, .inp { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 10px; min-height: 40px; color: var(--ink); font-weight: 500; font-size: 15px; width: 100%; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 8px 14px; min-height: 40px; font-weight: 700; }
+.btn.dark { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.btn.danger { color: var(--bad); }
+.btn:disabled { opacity: .4; cursor: default; }
+details.pe { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; border-left: 6px solid var(--c); }
+details.pe + details.pe { margin-top: 8px; }
+details.pe summary { padding: 12px 14px; font-weight: 800; cursor: pointer; }
+.pebody { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.ie { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--bg); }
+.ie .mini { min-height: 36px; padding: 4px 10px; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--surface); background: var(--c); box-shadow: 0 0 0 1px var(--line); }
+.swatches button[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
+.info { font-size: 13px; color: var(--muted); min-height: 1.4em; white-space: pre-line; word-break: break-all; }
+details.maker { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.maker summary { font-weight: 700; cursor: pointer; font-size: 14px; padding: 4px 0; }
+details.maker p { margin-top: 8px; }
+.ver { font-size: 12px; color: var(--muted); text-align: center; }
+#toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 14px; z-index: 10; max-width: calc(100vw - 32px); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>習慣きろく</h1>
+    <button class="icon-btn" id="openSettings" type="button" aria-label="設定">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </header>
+  <p class="sync" id="sync" role="status"></p>
+
+  <div class="people" id="people" role="group" aria-label="だれの記録"></div>
+
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-view="day" aria-selected="true">日</button>
+    <button type="button" role="tab" data-view="month" aria-selected="false">月</button>
+    <button type="button" role="tab" data-view="year" aria-selected="false">年</button>
+  </div>
+
+  <section id="vDay" class="wrap">
+    <div class="datebar">
+      <button class="icon-btn" id="dPrev" type="button" aria-label="前の日">◀</button>
+      <label class="cur" id="dCur"><b id="dLabel"></b><small id="dSub"></small><input type="date" id="dPick" aria-label="日付をえらぶ"></label>
+      <button class="icon-btn" id="dNext" type="button" aria-label="次の日">▶</button>
+    </div>
+    <button class="linkbtn" id="dToday" type="button" hidden>今日にもどる</button>
+    <div class="items" id="items"></div>
+    <div class="panel">
+      <h2><label for="memo">メモ</label><span id="memoState"></span></h2>
+      <textarea id="memo" placeholder="できなかった理由、その日のことなど"></textarea>
+    </div>
+  </section>
+
+  <section id="vMonth" class="wrap" hidden>
+    <div class="datebar">
+      <button class="icon-btn" id="mPrev" type="button" aria-label="前の月">◀</button>
+      <div class="cur"><b id="mLabel"></b></div>
+      <button class="icon-btn" id="mNext" type="button" aria-label="次の月">▶</button>
+    </div>
+    <div class="panel">
+      <h2>達成率 <span>できた ÷（できた＋失敗）</span></h2>
+      <div class="rates" id="mRates"></div>
+    </div>
+    <div class="panel tablewrap"><table class="mt" id="mTable"></table></div>
+  </section>
+
+  <section id="vYear" class="wrap" hidden>
+    <div class="datebar">
+      <button class="icon-btn" id="yPrev" type="button" aria-label="前の年">◀</button>
+      <div class="cur"><b id="yLabel"></b></div>
+      <button class="icon-btn" id="yNext" type="button" aria-label="次の年">▶</button>
+    </div>
+    <div class="panel">
+      <h2>つづいている日数 <span>今日まで</span></h2>
+      <div class="tiles" id="streaks"></div>
+    </div>
+    <div class="panel tablewrap">
+      <h2 style="margin:14px 16px 10px">月ごとの達成率 <span>％</span></h2>
+      <table class="yt" id="yTable"></table>
+      <div class="scale" aria-hidden="true">0% <i style="--v:0"></i><i style="--v:25"></i><i style="--v:50"></i><i style="--v:75"></i><i style="--v:100"></i> 100%</div>
+      <p class="detail" id="yDetail">マスを押すと、できた・失敗・未入力の日数が出ます</p>
+    </div>
+  </section>
+</div>
+
+<dialog id="settings" aria-labelledby="setTitle">
+  <div class="dhead">
+    <h2 id="setTitle">設定</h2>
+    <button class="btn dark" id="closeSettings" type="button">保存して閉じる</button>
+  </div>
+  <div class="dbody">
+    <section>
+      <h3>人と項目</h3>
+      <p>人ごとに、記録する項目を変えられます。項目を消しても、これまでの記録は保存先に残ります。</p>
+      <div id="pEdit"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="pAdd" type="button">＋ 人を足す</button></div>
+    </section>
+
+    <section class="panel">
+      <h3>記録の保存先（GitHub）</h3>
+      <p>接続コードを貼り付けると、記録が GitHub の非公開リポジトリに保存され、どの端末でも同じ記録になります。ピアノれんしゅう記録と同じ接続コードを使います。つなげないあいだは、記録はこの端末の中だけに残ります。</p>
+      <div class="row">
+        <label class="field" style="flex:1 1 100%">接続コード<textarea id="connCode" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="KIROKU1:…"></textarea></label>
+        <button class="btn dark" id="connGo" type="button">つなげる</button>
+        <button class="btn danger" id="connOff" type="button" hidden>接続を解除する</button>
+      </div>
+      <p class="info" id="cloudInfo"></p>
+      <div class="row">
+        <button class="btn" id="copyLink" type="button" hidden>設定用リンクをコピー</button>
+        <button class="btn" id="copyCode" type="button" hidden>接続コードをコピー</button>
+      </div>
+      <p class="info" id="linkInfo"></p>
+      <details class="maker">
+        <summary>接続コードを作る（設定する人向け）</summary>
+        <p>GitHub で作ったデータ用の非公開リポジトリと、そのリポジトリだけを読み書きできるトークンから、接続コードを作ります。トークンはこの端末の中で接続コードにまとめるだけで、ほかには送りません。</p>
+        <div class="row">
+          <label class="field">GitHub のユーザー名<input id="mkOwner" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <label class="field">データ用リポジトリの名前<input id="mkRepo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <label class="field" style="flex:1 1 100%">トークン（github_pat_…）<input id="mkToken" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <button class="btn" id="mkGo" type="button">接続コードを作る</button>
+        </div>
+        <label class="field" style="margin-top:8px">できた接続コード<textarea id="mkOut" rows="2" readonly></textarea></label>
+        <p class="info" id="mkInfo"></p>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h3>過去の記録を取り込む</h3>
+      <p>変換ツールで作った取り込みファイル（.json）を選びます。同じ日・同じ項目の記録は、取り込んだ内容で置きかわります。</p>
+      <div class="row">
+        <label class="field">取り込む人<select id="impWho"></select></label>
+        <label class="field" style="flex:2 1 12em">ファイル<input id="impFile" type="file" accept=".json,application/json"></label>
+      </div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:10px 0"><input type="checkbox" id="impItems" checked> 項目の設定（選択肢・説明・基準）も取り込む</label>
+      <div class="row"><button class="btn" id="impGo" type="button" disabled>取り込む</button></div>
+      <p class="info" id="impInfo"></p>
+    </section>
+    <p class="ver" id="ver"></p>
+  </div>
+</dialog>
+<div id="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="calendar.js"></script>
+<script src="core.js"></script>
+<script src="ghstore.js"></script>
+<script src="sync.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

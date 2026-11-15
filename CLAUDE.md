@@ -1,49 +1,55 @@
-# Claude Code 向け指示書（<プロジェクト名>）
+# Claude Code 向け指示書（Routine — 習慣きろく）
 
 本リポジトリは `spec/`（仕様＝SSOT）と `impl/`（実装）を統合した mono-repo。**最初にこのファイルを読むこと。**
 **プランモードは使わない。** 計画・仕様・作業台帳は本リポのドキュメントで管理する（→ 末尾「運用ループ」）。
 
 ## プロジェクトの前提
 
-- ドメイン: <何を解決する装置／ソフトか>
-- 対象: <対象ワーク・ユーザー>
-- スコープ: Claude Code が書くのは <PCアプリ／解析ツール 等>。<対象外（ファーム等）> は含めない。
-- 主要技術: <言語・GUI・主要ライブラリ>。詳細は下「技術スタック」。
+- ドメイン: 家族それぞれの毎日の習慣（起床・運動・柔軟・英語・ピアノなど）を記録し、振り返る Web アプリ。
+- 対象: 家族（本人・子供）。スマホ・タブレット・PC のブラウザから使う。
+- スコープ: Claude Code が書くのは、ブラウザで動く静的 Web アプリと、過去の記録の変換ツール。「ピアノれんしゅう記録」（`piano-log`、`C:\ai\Sheet Music\練習記録アプリ`）の計測機能は含めない。
+- 主要技術: 素の HTML/CSS/JavaScript（ビルドなし）、GitHub Pages、GitHub REST API。詳細は下「技術スタック」。
+- データ: アプリ本体は公開リポジトリ、記録は**別の非公開リポジトリ**（データ用。`piano-log` と共有、ADR-0003）。
 
 ## ハードルール（不変条件・必ず守る）
 
-> ここはプロジェクト固有の“絶対に動かさない”制約を箇条書きにする。AIP-Flex の例が参考になる。
-
-1. **仕様（`spec/`）の値はハードコードしない。** 起動時に `impl/` 側 config からロード。欠落は fail-fast。
-2. **機種差・特注は profile/config で吸収する（ソフト一本化）。** コードは分岐させない。
-3. **<HW境界>は抽象基底経由でしか触らない。** 上位は具象クラス名を知らない。設定で切替。
-4. **オペレータに見える文字列は日本語**、コード・コメント・ログは英語。
-5. **単位**: <直線 mm／角度 deg／時間 ms 等を明記>。
-6. <その他、座標系・安全入力の扱いなど>
+1. **仕様（`spec/`）の値はハードコードしない。** 既定値は `impl/src/config.js`、人ごとの項目は保存先の設定（`routine/config.json`）から読む。
+2. **人・項目の違いは設定で吸収する（ソフト一本化）。** 特定の人や項目の名前でコードを分岐させない。
+3. **記録・名前・メモ・トークン・接続コードをこのリポジトリに入れない。** このリポジトリは公開。`original/` と `*.import.json` は
+   `.gitignore` 済み。テストデータは作り物だけを使う。
+4. **`piano-log` を壊さない。** `ghstore.js` は両アプリ共通で、同じ内容に保つ（正は本リポジトリ）。
+   `piano/` のファイルの形を変えるときは `schema` を上げ、古い形も読めるようにする。習慣きろくは `piano/` に書かない。
+5. **画面に出る文字列は日本語**、コード・コメント・ログは英語。
+6. **単位**: 日付は `YYYY-MM-DD`（端末の現地時間）、時刻は `HH:MM`（24時間）、ピアノは秒で持ち分で表示、
+   更新日時は ISO 8601（UTC）。
+7. **保存先との境界は `ghstore.js`（GitHub とのやりとり）と `sync.js`（何をどのファイルに）だけ。**
+   `core.js`・`sync.js`・`ghstore.js` は DOM・localStorage を触らない。トークンは GitHub（`api.github.com`）以外に送らない。
 
 ## SSOT（単一の真実）
 
 - 値の正は **`spec/` の Markdown**。`impl/` はそこから転記する。食い違えば **`spec/` を正**とする。
-- 発見は実装・実機から始まってもよいが、**`spec/` に書き戻すまで「完了」ではない**（逆流は STATUS.md 経由で正規化）。
+- 発見は実装から始まってもよいが、**`spec/` に書き戻すまで「完了」ではない**（逆流は STATUS.md 経由で正規化）。
 
 ## Git 運用
 
-- git は必須（旧版復元・特注分岐のため）。**worktree は使わない**（単一作業ツリーで直列）。
+- git は必須。**worktree は使わない**（単一作業ツリーで直列）。
 - 作業ブランチは **`vX.Y` 形式**（次の版番号）。`claude/...` の自動命名は使わない。
 - 完了時：`git switch main` → `git merge --no-ff vX.Y -m "Merge vX.Y (要約)"` → `git tag vX.Y` → `git branch -d vX.Y`。
-- 特注は **`impl/devices/<機種>/` ＋ `spec/interface/profiles/<機種>.md` を足す**（profile方式）。コード分岐は本当にロジックが違う時のみ `custom/<客>`。
 - 文書の成熟度は frontmatter `status:`、リリースは tag（役割を混ぜない）。
+- GitHub Pages は `main` への push で `.github/workflows/pages.yml` が `impl/src/` を公開する。
 
 ## 仕様 ↔ 実装の対応（doc ↔ impl）
 
 | spec（正） | impl | テスト |
 |---|---|---|
-| `interface/<x>-schema.md`, `profiles/<機種>.md` | `src/config/` ＋ `devices/<機種>/*.json` | `test_config_load` |
-| `software/hal/<境界>.md` | `src/hal/<境界>/`（base＋具象＋mock） | mockで単体 |
-| `software/behaviors/<機能>.md` の Acceptance | `src/<module>/` | `test_<機能>.py` |
-| `software/architecture.md` | `src/` レイアウト | — |
+| `software.md` §データ・接続コード・GitHub API | `src/ghstore.js` | `tests/store.test.js` |
+| `software.md` 同期のマージ | `src/sync.js` | `tests/store.test.js`（偽の GitHub）、`tests/live-github.js`（本物・手動） |
+| `software.md` 起床の判定／ピアノの自動集計／達成率 | `src/core.js` | `tests/core.test.js` |
+| `software.md` 入力／月の一覧／取り込み | `src/app.js`, `src/index.html` | `tests/mock-server.js` でブラウザ確認 |
+| `software.md` 過去の記録の取り込み（変換） | `tools/convert_original.py` | 変換結果の件数・異常の報告 |
 
-**Mock-first**：全HW境界に Mock を常備し、`tests/unit/` を実機なしで CI 実行。実機テストは `tests/integration/`（`@pytest.mark.hardware`、CI除外）。
+**Mock-first**：保存先は `tests/fake-github.js`（GitHub API の必要な部分をメモリ上でまねる。sha の検査・認証つき）。
+単体テストもブラウザ確認も、ネットワークなしで走る。本物の GitHub での確認は `tests/live-github.js`（手動）。
 
 ## 何を読めば何が分かるか
 
@@ -51,34 +57,36 @@
 |---|---|
 | なぜ作るか・目標値・NFR | `spec/requirements.md` |
 | 用語 | `spec/glossary.md` |
-| 振る舞い＋作り方＋受入 | `spec/software.md`（昇格後は `software/behaviors/<機能>.md`） |
+| 振る舞い＋作り方＋受入 | `spec/software.md` |
 | なぜそう決めたか | `spec/decisions/ADR-*.md` |
 | 今どこ・次に何を | `STATUS.md` |
 
 ## 技術スタック（確定）
 
-- 言語: <Python 3.11+ 等>
-- GUI: <PySide6 等>
-- 設定/バリデーション: <pydantic v2 等、ユーザー設定は JSON>
-- 対象OS: <Windows 10/11 x64 等>
+- 言語: JavaScript（ES2020、ブラウザ）。ビルド・フレームワークなし
+- 保存先: GitHub の非公開リポジトリ＋GitHub REST API＋fine-grained personal access token（`piano-log` と共有）
+- 配信: GitHub Pages（GitHub Actions で `impl/src/` を公開）
+- テスト: Node.js 20+ の `node --test`
+- 変換ツール: Python 3（`openpyxl`）
+- 対象: iPad／iPhone の Safari、PC の Chrome／Edge
 
 選定根拠は `spec/decisions/` の ADR を参照。
 
 ## ビルド・実行・テスト
 
-- `<pip install -e .[dev] 等>`
-- `<python -m <pkg> 等>` で起動（Mockは `--mock` 等）
-- `<pytest>` でテスト
-- コミット前に `<ruff check . && ruff format .>`
+- `node --test "impl/tests/*.test.js"` でテスト
+- `node impl/tests/mock-server.js --demo` で起動（<http://localhost:8765/>、偽の GitHub つき。起動時に接続コードと設定用リンクを表示する）
+- `GH_TOKEN=… node impl/tests/live-github.js <owner> <repo>` で本物の GitHub に対する往復確認（手動）
+- `python impl/tools/convert_original.py` で過去の記録を取り込みファイルに変換（`original/` → `original/*.import.json`）
 
 ## スタイル
 
-- 公開関数は型ヒント必須。グローバル状態を持たず依存は注入する。
-- Mock 実装を常備し、実機なしで単体テストが走るようにする。
+- `core.js` は純粋関数。日付・設定・記録は引数で受け取る（グローバル状態を持たない）。
+- 画面は `app.js` の `h()` で要素を組み立てる（`innerHTML` に記録の文字列を入れない）。
 
 ## 運用ループ（プランモードの代替）
 
 1. 開始：本ファイル（自動）＋ `STATUS.md`（次タスク）＋ README 索引から該当 spec を読む。
-2. behavior 仕様が無ければ、**先に `software/behaviors/<タスク>.md`（Acceptance付き）を書く**＝これが計画。
-3. `impl/` で実装。Acceptance を Mock 単体テストに翻訳。
-4. 終了：`STATUS.md` 更新（done／次／再開点）、必要なら ADR、実機確定値を `spec/` に**書き戻す**。
+2. behavior 仕様が無ければ、**先に `spec/software.md` に Acceptance 付きで書く**＝これが計画。
+3. `impl/` で実装。Acceptance を単体テストに翻訳。
+4. 終了：`STATUS.md` 更新（done／次／再開点）、必要なら ADR、確定した値を `spec/` に**書き戻す**。
