@@ -1,0 +1,5 @@
+# personal records: never publish
+original/
+*.import.json
+node_modules/
+.claude/
