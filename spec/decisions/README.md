@@ -16,3 +16,4 @@
 | ADR | タイトル | status |
 |---|---|---|
 | [0001](ADR-0001-record-architecture-decisions.md) | ADR を用いて判断を記録する | accepted |
+| [0002](ADR-0002-shared-spreadsheet-with-piano-log.md) | 記録は piano-log と同じ Google スプレッドシートに保存し、アプリは別にする | accepted |
