@@ -191,6 +191,9 @@ details.pe summary { padding: 12px 14px; font-weight: 800; cursor: pointer; }
 .swatches button { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--surface); background: var(--c); box-shadow: 0 0 0 1px var(--line); }
 .swatches button[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--ink); }
 .info { font-size: 13px; color: var(--muted); min-height: 1.4em; white-space: pre-line; word-break: break-all; }
+details.maker { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.maker summary { font-weight: 700; cursor: pointer; font-size: 14px; padding: 4px 0; }
+details.maker p { margin-top: 8px; }
 .ver { font-size: 12px; color: var(--muted); text-align: center; }
 #toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translateX(-50%); background: var(--ink); color: var(--bg); border-radius: 999px; padding: 10px 18px; font-weight: 700; font-size: 14px; z-index: 10; max-width: calc(100vw - 32px); }
 </style>
@@ -267,22 +270,37 @@ details.pe summary { padding: 12px 14px; font-weight: 800; cursor: pointer; }
   <div class="dbody">
     <section>
       <h3>人と項目</h3>
-      <p>人ごとに、記録する項目を変えられます。項目を消しても、これまでの記録はスプレッドシートに残ります。</p>
+      <p>人ごとに、記録する項目を変えられます。項目を消しても、これまでの記録は保存先に残ります。</p>
       <div id="pEdit"></div>
       <div class="row" style="margin-top:10px"><button class="btn" id="pAdd" type="button">＋ 人を足す</button></div>
     </section>
 
     <section class="panel">
-      <h3>記録の保存先（Google スプレッドシート）</h3>
-      <p>ピアノれんしゅう記録と同じ「ウェブアプリの URL」（…/exec）を入れます。入れないあいだは、記録はこの端末の中だけに残ります。</p>
+      <h3>記録の保存先（GitHub）</h3>
+      <p>接続コードを貼り付けると、記録が GitHub の非公開リポジトリに保存され、どの端末でも同じ記録になります。ピアノれんしゅう記録と同じ接続コードを使います。つなげないあいだは、記録はこの端末の中だけに残ります。</p>
       <div class="row">
-        <label class="field" style="flex:1 1 100%">ウェブアプリの URL<input id="cloudUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></label>
-        <button class="btn" id="cloudTest" type="button">つなげる</button>
-        <button class="btn" id="copyCode" type="button">スプレッドシート用プログラムをコピー</button>
+        <label class="field" style="flex:1 1 100%">接続コード<textarea id="connCode" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="KIROKU1:…"></textarea></label>
+        <button class="btn dark" id="connGo" type="button">つなげる</button>
+        <button class="btn danger" id="connOff" type="button" hidden>接続を解除する</button>
       </div>
       <p class="info" id="cloudInfo"></p>
-      <div class="row"><button class="btn" id="copyLink" type="button">設定用リンクをコピー</button></div>
-      <p class="info" id="linkInfo">リンクを開くだけで、ほかの端末にも保存先が設定されます。家族以外には教えないでください。</p>
+      <div class="row">
+        <button class="btn" id="copyLink" type="button" hidden>設定用リンクをコピー</button>
+        <button class="btn" id="copyCode" type="button" hidden>接続コードをコピー</button>
+      </div>
+      <p class="info" id="linkInfo"></p>
+      <details class="maker">
+        <summary>接続コードを作る（設定する人向け）</summary>
+        <p>GitHub で作ったデータ用の非公開リポジトリと、そのリポジトリだけを読み書きできるトークンから、接続コードを作ります。トークンはこの端末の中で接続コードにまとめるだけで、ほかには送りません。</p>
+        <div class="row">
+          <label class="field">GitHub のユーザー名<input id="mkOwner" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <label class="field">データ用リポジトリの名前<input id="mkRepo" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <label class="field" style="flex:1 1 100%">トークン（github_pat_…）<input id="mkToken" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          <button class="btn" id="mkGo" type="button">接続コードを作る</button>
+        </div>
+        <label class="field" style="margin-top:8px">できた接続コード<textarea id="mkOut" rows="2" readonly></textarea></label>
+        <p class="info" id="mkInfo"></p>
+      </details>
     </section>
 
     <section class="panel">
@@ -304,6 +322,8 @@ details.pe summary { padding: 12px 14px; font-weight: 800; cursor: pointer; }
 <script src="config.js"></script>
 <script src="calendar.js"></script>
 <script src="core.js"></script>
+<script src="ghstore.js"></script>
+<script src="sync.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

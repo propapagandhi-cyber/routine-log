@@ -31,7 +31,7 @@
   }
 
   // ---------- storage ----------
-  const LS = { config: 'rl.config', entries: 'rl.entries', queue: 'rl.queue', piano: 'rl.piano', url: 'rl.url', sel: 'rl.sel' };
+  const LS = { config: 'rl.config', entries: 'rl.entries', queue: 'rl.waiting', piano: 'rl.piano', conn: 'rl.conn', files: 'rl.files', sel: 'rl.sel' };
   function load(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
   function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked or full */ } }
   const slim = (e) => ({ id: e.id, date: e.date, person: e.person, item: e.item, result: e.result, value: e.value, updatedAt: e.updatedAt });
@@ -39,12 +39,18 @@
   const stored = load(LS.config, null);
   let config = stored ? K.normalizeConfig(stored) : K.seedConfig(null, C);
   let entries = K.mergeEntries(load(LS.entries, []), []);
-  let queue = load(LS.queue, []);
-  let piano = load(LS.piano, { records: [], since: '', people: [] });
+  const NO_PIANO = { records: [], since: '', sinceSetting: '', people: [] };
+  let piano = Object.assign({}, NO_PIANO, load(LS.piano, null));
   let pianoIdx = K.pianoIndex(piano.records);
-  let cloudUrl = load(LS.url, '');
   let selId = load(LS.sel, '');
-  let syncState = cloudUrl ? 'wait' : 'local';
+  // the data repository on GitHub (see ghstore.js / sync.js)
+  let conn = load(LS.conn, null);                 // { owner, repo, token, branch, api } from the 接続コード
+  const fileShas = load(LS.files, {});            // what this device has already read: path → sha
+  const q0 = load(LS.queue, null) || {};
+  const waiting = new Map((q0.entries || []).map((e) => [e.id, e]));   // entries not yet in the repository
+  let configDirty = !!q0.config;
+  let sync = conn ? RoutineSync.create(GHStore.create(conn), fileShas) : null;
+  let syncState = conn ? 'wait' : 'local', syncKind = '';
 
   let today = K.dkey(new Date());
   let view = 'day';
@@ -57,132 +63,176 @@
   const colorOf = (p) => `var(--p${(p.color || 0) % C.colors})`;
   const MEMO = { id: C.memoItem, name: 'メモ' };
 
-  // ---------- cloud (Google Apps Script web app, shared with piano-log) ----------
-  const validUrl = (u) => /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$|^http:\/\/(localhost|127\.0\.0\.1):\d+\/exec$/.test(u || '');
-  async function cloudGet(url) {
-    const r = await fetch((url || cloudUrl) + '?action=routine&t=' + Date.now(), { cache: 'no-store' });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'error');
-    return j;
+  // ---------- cloud (private data repository on GitHub, shared with piano-log) ----------
+  const L = GHStore.Layout;
+  const connected = () => !!sync;
+  const pending = () => [...waiting.values()];
+  const yearOf = (e) => +e.date.slice(0, 4);
+  const saveQueue = () => save(LS.queue, { entries: pending(), config: configDirty });
+  const saveEntries = () => save(LS.entries, [...entries.values()].map(slim));
+  const SYNC_MSG = {
+    auth: '接続できません（接続コードの期限切れかもしれません）。設定の「記録の保存先」を見てください',
+    forbidden: '保存する権限がありません。接続コードの設定を確認してください',
+    ratelimit: '少し時間をおいてから、もう一度ためします',
+    notfound: '記録の保存先が見つかりません。設定の「記録の保存先」を見てください',
+    format: '保存先のデータが読めませんでした。設定する人に連絡してください',
+  };
+  const syncMessage = (kind) => SYNC_MSG[kind] || '保存先とやりとりできませんでした。しばらくしてからもう一度ためします';
+  function failed(e) {
+    syncKind = (e && e.kind) || 'unknown';
+    syncState = syncKind === 'offline' ? 'offline' : 'error';
   }
-  async function cloudPost(body) {
-    const r = await fetch(cloudUrl, { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'error');
-    return j;
-  }
-  const pending = () => queue.filter((q) => q.action === 'entries').flatMap((q) => q.entries);
 
-  let flushing = null;
+  /** One person's year as it is in the repository; what is still waiting to be sent stays on top. */
+  function adoptFile(personId, year, list) {
+    const y = String(year);
+    for (const [id, e] of entries) if (e.person === personId && e.date.startsWith(y)) entries.delete(id);
+    for (const e of list) entries.set(e.id, e);
+    for (const e of waiting.values()) if (e.person === personId && e.date.startsWith(y)) entries.set(e.id, e);
+  }
+  function adoptConfig(c) {
+    if (configDirty || !c || !Array.isArray(c.people) || !c.people.length || (c.updatedAt || 0) < (config.updatedAt || 0)) return;
+    config = K.normalizeConfig(c);
+    save(LS.config, config);
+  }
+
+  let flushing = null, flushTimer = 0;
+  // a moment after the last tap, so that a run of taps becomes one write
+  function flushSoon() { clearTimeout(flushTimer); flushTimer = setTimeout(flush, C.pushDelayMs); }
   function flush() {
-    if (!validUrl(cloudUrl)) { syncState = 'local'; renderSync(); return Promise.resolve(); }
+    clearTimeout(flushTimer);
+    if (!connected()) { syncState = 'local'; renderSync(); return Promise.resolve(); }
     if (flushing) return flushing;
     flushing = (async () => {
       try {
-        while (queue.length) {
-          if (queue.length > 1) { syncState = 'sending'; renderSync(); }
-          await cloudPost(queue[0]);
-          queue.shift();
-          save(LS.queue, queue);
+        while (waiting.size || configDirty) {
+          if (waiting.size) {
+            // one file (person × year) at a time
+            const first = waiting.values().next().value;
+            const batch = pending().filter((e) => e.person === first.person && yearOf(e) === yearOf(first));
+            if (waiting.size > batch.length) { syncState = 'sending'; renderSync(); }
+            const merged = await sync.pushEntries(first.person, yearOf(first), batch);
+            for (const e of batch) if (waiting.get(e.id) === e) waiting.delete(e.id);   // unless it was edited again meanwhile
+            adoptFile(first.person, yearOf(first), merged);
+            saveEntries();
+          } else {
+            const sent = config.updatedAt;
+            const kept = await sync.pushConfig(config);
+            if (config.updatedAt === sent) { configDirty = false; adoptConfig(kept); }
+          }
+          saveQueue();
         }
-        if (syncState !== 'old') syncState = 'ok';
+        syncState = 'ok';
       } catch (e) {
-        // a script that only knows the piano app answers "unknown action"
-        syncState = /unknown action/.test(String(e.message)) ? 'old' : 'offline';
+        failed(e);
       }
-    })().finally(() => { flushing = null; renderSync(); });
+    })().finally(() => { flushing = null; save(LS.files, fileShas); render(true); renderSync(); });
     return flushing;
   }
-  function enqueueEntries(list) {
-    for (let i = 0; i < list.length; i += C.postChunk) {
-      const part = list.slice(i, i + C.postChunk);
-      const last = queue[queue.length - 1];
-      const free = last && last.action === 'entries' && !(flushing && queue.length === 1);   // queue[0] may be on its way
-      if (free && last.entries.length + part.length <= C.postChunk) {
-        const ids = new Set(part.map((e) => e.id));
-        last.entries = last.entries.filter((e) => !ids.has(e.id)).concat(part);
-      } else {
-        queue.push({ action: 'entries', entries: part });
-      }
-    }
-    save(LS.queue, queue);
-    flush();
-  }
-  function putEntries(list) {
-    for (const e of list) entries.set(e.id, e);
-    save(LS.entries, [...entries.values()].map(slim));
-    if (validUrl(cloudUrl)) enqueueEntries(list);
+  function putEntries(list, now) {
+    for (const e of list) { entries.set(e.id, e); if (connected()) waiting.set(e.id, e); }
+    saveEntries();
+    if (!connected()) return;
+    saveQueue();
+    renderSync();
+    if (now) flush(); else flushSoon();
   }
   function pushConfig() {
     save(LS.config, config);
-    if (!validUrl(cloudUrl)) return;
-    queue = queue.filter((q, i) => q.action !== 'routineConfig' || (flushing && i === 0));
-    queue.push({ action: 'routineConfig', config });
-    save(LS.queue, queue);
-    flush();
+    if (!connected()) return;
+    configDirty = true;
+    saveQueue();
+    flushSoon();
+  }
+
+  /** Takes over what changed in the repository since the last look. */
+  function applyPull(got) {
+    let pianoChanged = false;
+    const dropYear = (y) => { piano.records = piano.records.filter((r) => !String(r.date).startsWith(String(y))); pianoChanged = true; };
+    for (const f of got.files) {
+      if (f.kind === 'routineYear') adoptFile(f.person, f.year, f.entries);
+      else if (f.kind === 'routineConfig') adoptConfig(f.config);
+      else if (f.kind === 'pianoYear') { dropYear(f.year); piano.records = piano.records.concat(f.records); }
+      else { piano.people = (f.settings && f.settings.people) || []; piano.sinceSetting = (f.settings && f.settings.since) || ''; pianoChanged = true; }
+    }
+    for (const path of got.removed) {
+      const k = L.kindOf(path);
+      if (k && k.kind === 'routineYear') adoptFile(k.person, k.year, []);
+      if (k && k.kind === 'pianoYear') dropYear(k.year);
+    }
+    if (pianoChanged) {
+      piano.since = K.pianoSince({ since: piano.sinceSetting }, piano.records);
+      pianoIdx = K.pianoIndex(piano.records);
+      save(LS.piano, piano);
+    }
+    // nothing saved anywhere yet: start from the people of the piano app
+    if (!config.updatedAt && !fileShas[L.routineConfig] && piano.people.length) {
+      config = K.seedConfig({ people: piano.people }, C);
+      save(LS.config, config);
+    }
+    saveEntries();
   }
 
   let lastRefresh = 0;
   async function refreshCloud(force) {
-    if (!validUrl(cloudUrl)) { syncState = 'local'; renderSync(); return; }
+    if (!connected()) { syncState = 'local'; renderSync(); return; }
     if (!force && Date.now() - lastRefresh < C.refreshMs) return;
     lastRefresh = Date.now();
     await flush();
-    try {
-      const j = await cloudGet();
-      if (!Array.isArray(j.entries)) {
-        syncState = 'old';
-      } else {
-        entries = K.mergeEntries(j.entries, pending());
-        save(LS.entries, [...entries.values()].map(slim));
-        piano = { records: j.records || [], since: K.pianoSince(j.settings, j.records), people: (j.settings && j.settings.people) || [] };
-        pianoIdx = K.pianoIndex(piano.records);
-        save(LS.piano, piano);
-        const waiting = queue.some((q) => q.action === 'routineConfig');
-        if (j.routine && Array.isArray(j.routine.people) && j.routine.people.length && !waiting && (j.routine.updatedAt || 0) >= (config.updatedAt || 0)) {
-          config = K.normalizeConfig(j.routine);
-          save(LS.config, config);
-        } else if (!j.routine && !config.updatedAt) {
-          // nothing saved yet anywhere: start from the people of the piano app
-          config = K.seedConfig(j.settings, C);
-          save(LS.config, config);
-        }
-        syncState = queue.length ? 'offline' : 'ok';
+    if (syncState === 'ok' || syncState === 'wait') {
+      try {
+        applyPull(await sync.pull());
+        syncState = 'ok';
+      } catch (e) {
+        failed(e);
       }
-    } catch (e) {
-      syncState = 'offline';
+      save(LS.files, fileShas);
     }
     rebaseDraft();
     render(true);
     renderSync();
   }
-  function connectCloud(url) {
-    const wasLocal = !validUrl(cloudUrl);
-    cloudUrl = url;
-    save(LS.url, cloudUrl);
-    syncState = 'wait';
-    if (wasLocal) {
-      // what was recorded on this device before it had a sheet goes up too (the newer write wins there)
-      const local = [...entries.values()].map((e) => {
-        const p = config.people.find((x) => x.id === e.person);
-        const it = p && (e.item === MEMO.id ? MEMO : p.items.find((x) => x.id === e.item));
-        return Object.assign({ personName: p ? p.name : '', itemName: it ? it.name : '' }, e);
-      });
-      if (local.length) enqueueEntries(local);
-      if (config.updatedAt) pushConfig();
+  function connectCloud(next) {
+    const wasLocal = !connected();
+    const other = !wasLocal && (conn.owner !== next.owner || conn.repo !== next.repo);
+    conn = next;
+    save(LS.conn, conn);
+    for (const k of Object.keys(fileShas)) delete fileShas[k];      // read everything again
+    if (other) {
+      // another repository: what came from the old one does not belong here
+      entries = K.mergeEntries([], pending());
+      piano = Object.assign({}, NO_PIANO);
+      pianoIdx = K.pianoIndex([]);
+      save(LS.piano, piano);
     }
+    sync = RoutineSync.create(GHStore.create(conn), fileShas);
+    if (wasLocal) {
+      // what was recorded on this device before it was connected goes up too (the newer write wins there)
+      for (const e of entries.values()) waiting.set(e.id, e);
+      if (config.updatedAt) configDirty = true;
+    }
+    saveQueue();
+    syncState = 'wait';
+    renderSync();
     return refreshCloud(true);
+  }
+  function disconnectCloud() {
+    conn = null; sync = null;
+    save(LS.conn, null);
+    waiting.clear(); configDirty = false; saveQueue();
+    syncState = 'local';
+    renderSync();
   }
   function renderSync() {
     const el = $('sync');
-    const n = pending().length;
-    el.classList.toggle('bad', syncState === 'offline' || syncState === 'old' || (syncState === 'local' && entries.size > 0));
+    const n = waiting.size;
+    el.classList.toggle('bad', syncState === 'offline' || syncState === 'error' || (syncState === 'local' && entries.size > 0));
     if (syncState === 'local') el.textContent = '記録はこの端末の中だけに保存しています（設定で保存先につなげられます）';
     else if (syncState === 'wait') el.textContent = '読みこんでいます…';
     else if (syncState === 'sending') el.textContent = `保存先へ送っています（のこり ${n}件）`;
-    else if (syncState === 'old') el.textContent = 'スプレッドシートのプログラムが古いため、習慣の記録を保存できません（設定 →「記録の保存先」を見てください）';
-    else if (syncState === 'offline') el.textContent = n ? `まだ送れていない記録が ${n}件あります。つながったら送ります` : 'スプレッドシートにつながりません。あとでもう一度ためします';
-    else el.textContent = 'スプレッドシートに保存ずみ';
+    else if (syncState === 'offline') el.textContent = n ? `まだ送れていない記録が ${n}件あります。つながったら送ります` : 'インターネットにつながっていません。つながったら読みこみます';
+    else if (syncState === 'error') el.textContent = syncMessage(syncKind) + (n ? `（送れていない記録 ${n}件）` : '');
+    else el.textContent = n ? '保存しています…' : '保存ずみ';
   }
 
   // ---------- writing ----------
@@ -303,7 +353,7 @@
       if (st.value) ctl.append(h('div', { class: 'pianoval num', text: st.value }), h('div', { class: 'sep' }));
       ctl.append(mark(DONE), mark(FAIL));
       const why = !p.pianoId ? 'ピアノれんしゅう記録の人とつながっていません（設定）'
-        : !validUrl(cloudUrl) ? '保存先につなげると、ピアノの時間が自動で入ります'
+        : !connected() ? '保存先につなげると、ピアノの時間が自動で入ります'
           : piano.since && date >= piano.since ? 'ピアノれんしゅう記録にこの日の練習がないため、取り込んだ記録を出しています'
             : 'ピアノれんしゅう記録を使いはじめる前の日です';
       ctl.append(h('span', { class: 'lim', text: why }));
@@ -458,7 +508,7 @@
             renderPeopleEdit();
           } }),
           h('button', { class: 'btn danger', type: 'button', text: 'この人を消す', disabled: draft.people.length <= 1, onclick: () => {
-            if (!window.confirm(`「${p.name}」を消しますか？（これまでの記録はスプレッドシートに残ります）`)) return;
+            if (!window.confirm(`「${p.name}」を消しますか？（これまでの記録は保存先に残ります）`)) return;
             draft.people.splice(pi, 1); renderPeopleEdit(); renderImportWho();
           } }),
         ]),
@@ -508,8 +558,10 @@
     openIds.clear();
     renderPeopleEdit();
     renderImportWho();
-    $('cloudUrl').value = cloudUrl;
-    $('cloudInfo').textContent = '';
+    $('connCode').value = '';
+    $('mkOut').value = '';
+    $('mkInfo').textContent = '';
+    renderConn('');
     $('impInfo').textContent = '';
     $('impFile').value = '';
     $('impGo').disabled = true;
@@ -546,50 +598,64 @@
     renderImportWho();
   });
 
-  const OLD_SCRIPT = 'つながりましたが、スプレッドシートのプログラムが古いままです。\n「スプレッドシート用プログラムをコピー」でコピーし、スプレッドシートの 拡張機能 → Apps Script に全部貼りかえて保存してから、'
-    + 'デプロイ → デプロイを管理 → 鉛筆 → バージョン「新バージョン」→ デプロイ をしてください（URL は変わりません）。';
-  $('cloudTest').addEventListener('click', async () => {
-    const url = $('cloudUrl').value.trim();
-    const info = $('cloudInfo');
-    if (!url) {
-      cloudUrl = ''; save(LS.url, ''); syncState = 'local'; renderSync();
-      info.textContent = '保存先を外しました。記録はこの端末の中だけに残ります';
-      return;
-    }
-    if (!validUrl(url)) { info.textContent = 'URL の形がちがいます（…/exec で終わる URL）'; return; }
-    info.textContent = 'たしかめています…';
+  const repoName = () => (conn ? `${conn.owner}/${conn.repo}` : '');
+  function renderConn(msg) {
+    $('connOff').hidden = !connected();
+    $('copyCode').hidden = !connected();
+    $('copyLink').hidden = !connected();
+    $('cloudInfo').textContent = msg || (connected() ? `つながっています（${repoName()}）` : 'まだつなげていません');
+  }
+  async function connectWith(code, say) {
+    let next;
+    try { next = GHStore.decodeCode(code); } catch (e) { say('接続コードの形がちがいます（KIROKU1: で始まる文字をまるごと貼ってください）'); return false; }
     try {
-      const j = await cloudGet(url);
-      await connectCloud(url);
-      info.textContent = Array.isArray(j.entries) ? `つながりました（習慣の記録 ${j.entries.length}件、ピアノの記録 ${(j.records || []).length}件）` : OLD_SCRIPT;
+      await GHStore.create(next).tree();
     } catch (e) {
-      info.textContent = 'つながりません。URL と、デプロイの「アクセスできるユーザー：全員」を確認してください';
+      say(e.kind === 'offline' ? 'インターネットにつながっていません' : syncMessage(e.kind));
+      return false;
     }
+    await connectCloud(next);
+    return true;
+  }
+  $('connGo').addEventListener('click', async () => {
+    const code = $('connCode').value.trim();
+    if (!code) { renderConn('接続コードを貼り付けてください'); return; }
+    renderConn('たしかめています…');
+    if (await connectWith(code, renderConn)) { $('connCode').value = ''; renderConn(`つながりました（${repoName()}）`); }
+  });
+  $('connOff').addEventListener('click', () => {
+    const n = waiting.size;
+    if (!window.confirm(n ? `まだ送れていない記録が ${n}件あります。接続を解除しますか？（記録はこの端末には残ります）` : '接続を解除しますか？（記録はこの端末と保存先の両方に残ります）')) return;
+    disconnectCloud();
+    renderConn('接続を解除しました。記録はこの端末の中だけに残ります');
   });
   async function copy(text, info, okMsg) {
-    try { await navigator.clipboard.writeText(text); info.textContent = okMsg; } catch (e) { info.textContent = text.length < 400 ? text : 'コピーできませんでした'; }
+    try { await navigator.clipboard.writeText(text); info.textContent = okMsg; } catch (e) { info.textContent = text; }
   }
-  $('copyCode').addEventListener('click', async () => {
-    const info = $('cloudInfo');
+  const KEEP = 'パスワードと同じです。家族以外には送らないでください';
+  $('copyCode').addEventListener('click', () => copy(GHStore.encodeCode(conn), $('linkInfo'), `接続コードをコピーしました。ピアノれんしゅう記録にも同じコードを使えます。${KEEP}`));
+  $('copyLink').addEventListener('click', () => copy(location.origin + location.pathname + '#c=' + GHStore.encodeCode(conn), $('linkInfo'), `設定用リンクをコピーしました。ほかの端末で開くと保存先が設定されます。${KEEP}`));
+  // making a code out of the three parts (the person who sets things up does this once)
+  $('mkGo').addEventListener('click', () => {
+    const out = $('mkOut');
     try {
-      const code = await (await fetch('apps-script.gs', { cache: 'no-store' })).text();
-      await copy(code, info, 'プログラムをコピーしました。Apps Script に貼りつけてください');
-    } catch (e) { info.textContent = 'コピーできませんでした。apps-script.gs を開いてコピーしてください'; }
+      out.value = GHStore.encodeCode({ owner: $('mkOwner').value, repo: $('mkRepo').value, token: $('mkToken').value });
+      $('connCode').value = out.value;
+      $('mkInfo').textContent = '接続コードを作りました。上の欄にも入れたので「つなげる」を押してください';
+      $('mkToken').value = '';
+    } catch (e) {
+      out.value = '';
+      $('mkInfo').textContent = 'ユーザー名・リポジトリの名前・トークンを全部入れてください';
+    }
   });
-  $('copyLink').addEventListener('click', () => {
-    const info = $('linkInfo');
-    if (!validUrl(cloudUrl)) { info.textContent = '先に保存先につなげてください'; return; }
-    copy(location.origin + location.pathname + '#c=' + encodeURIComponent(cloudUrl), info, 'コピーしました。LINE やメモに貼って残してください（家族以外には教えないでください）');
-  });
-  // opening a setup link (#c=…) stores the sheet, then removes it from the address bar
+  // opening a setup link (#c=KIROKU1:…) connects this device, then removes the code from the address bar
   function readSetupLink() {
     const hash = location.hash.replace(/^#/, '');
     if (!/(^|&)c=/.test(hash)) return false;
     const c = new URLSearchParams(hash).get('c');
     try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
-    if (!c || !validUrl(c)) return false;
-    connectCloud(c);
-    setTimeout(() => toast('記録の保存先を設定しました'), 400);
+    if (!c || !GHStore.isCode(c)) return false;
+    connectWith(c, toast).then((ok) => { if (ok) toast('記録の保存先を設定しました'); });
     return true;
   }
 
@@ -622,10 +688,10 @@
       openIds.add(p.id);
       renderPeopleEdit();
     }
-    putEntries(r.entries);
+    putEntries(r.entries, true);
     $('impGo').disabled = true;
     $('impInfo').textContent = `「${p.name}」に ${r.entries.length}件を取り込みました。`
-      + (validUrl(cloudUrl) ? '保存先へ送っています（画面の上の表示が「保存ずみ」になるまで開いたままにしてください）' : 'この端末の中に保存しました');
+      + (connected() ? '保存先へ送っています（画面の上の表示が「保存ずみ」になるまで開いたままにしてください）' : 'この端末の中に保存しました');
   });
 
   // ---------- start ----------
@@ -638,6 +704,9 @@
   window.addEventListener('pageshow', tick);
   window.addEventListener('hashchange', readSetupLink);   // a setup link opened in a tab that already shows the app
 
+  $('mkRepo').value = C.dataRepoName;
+  // leaving the app: send what is still waiting right away
+  document.addEventListener('visibilitychange', () => { if (document.hidden && (waiting.size || configDirty)) flush(); });
   render();
   renderSync();
   if (!readSetupLink()) refreshCloud(true);

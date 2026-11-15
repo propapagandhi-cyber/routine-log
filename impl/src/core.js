@@ -151,9 +151,8 @@
   // ---------- entries ----------
   function makeEntry(person, item, date, result, value, now) {
     return {
-      id: entryId(date, person.id, item.id), date, person: person.id, personName: person.name,
-      item: item.id, itemName: item.name, result: result || '', value: value || '',
-      updatedAt: (now || new Date()).toISOString(),
+      id: entryId(date, person.id, item.id), date, person: person.id, item: item.id,
+      result: result || '', value: value || '', updatedAt: (now || new Date()).toISOString(),
     };
   }
   /** Everything from the cloud, with what is still waiting to be sent laid on top (by id). */
@@ -202,8 +201,6 @@
   /** Checks an import file and returns its entries bound to `person`. */
   function readImport(obj, person, now) {
     if (!obj || obj.format !== 'routine-import' || !Array.isArray(obj.entries)) return { ok: false, error: '習慣きろくの取り込みファイルではありません' };
-    const names = new Map((obj.items || []).map((it) => [String(it.id), String(it.name || it.id)]));
-    for (const it of person.items) names.set(it.id, it.name);
     const stamp = (now || new Date()).toISOString();
     const items = (obj.items || []).filter((it) => it && it.id).map(cleanItem);
     // result 'auto' on a time item: judged here, by the file's limits (else the person's)
@@ -214,11 +211,7 @@
       let result = e.result === DONE || e.result === FAIL ? e.result : '';
       const def = defs.get(e.item);
       if (e.result === 'auto' && def && def.type === 'time') result = judgeTime(def, e.date, e.value);
-      entries.push({
-        id: entryId(e.date, person.id, e.item), date: e.date, person: person.id, personName: person.name,
-        item: e.item, itemName: names.get(e.item) || e.item,
-        result, value: String(e.value || ''), updatedAt: stamp,
-      });
+      entries.push({ id: entryId(e.date, person.id, e.item), date: e.date, person: person.id, item: e.item, result, value: String(e.value || ''), updatedAt: stamp });
     }
     const dates = entries.map((e) => e.date).sort();
     return { ok: true, entries, items, from: dates[0] || '', to: dates[dates.length - 1] || '' };

@@ -1,10 +1,10 @@
 ---
 adr: 0002
 title: 記録は piano-log と同じ Google スプレッドシートに保存し、アプリは別にする
-status: accepted        # proposed | accepted | superseded | deprecated
+status: superseded      # proposed | accepted | superseded | deprecated
 scope: architecture     # product | architecture | data | process | tooling | hardware
 supersedes:
-superseded_by:
+superseded_by: 0003
 date: 2026-11-16
 ---
 

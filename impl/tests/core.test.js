@@ -145,8 +145,7 @@ test('import: wrong files are refused, entries are bound to the chosen person (A
   assert.equal(r.ok, true);
   assert.deepEqual([r.from, r.to, r.entries.length], ['2026-04-01', '2026-04-02', 3]);
   assert.equal(r.entries[0].id, '2026-04-02_p1_wake');
-  assert.equal(r.entries[0].itemName, '起床');      // the person's own name for the item
-  assert.equal(r.entries[1].itemName, '柔軟');      // from the file
+  assert.deepEqual(Object.keys(r.entries[0]), ['id', 'date', 'person', 'item', 'result', 'value', 'updatedAt']);
   assert.equal(r.items[0].options[0], 'S');
   // 'auto' on a time item is judged at import, by the limits in the file
   const auto = Core.readImport({

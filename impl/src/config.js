@@ -1,12 +1,12 @@
 /* Defaults for the routine tracker. Everything a person or item can vary by lives here or in the
- * cloud config (script property `routine`) — never in app.js / core.js.
+ * cloud config (routine/config.json in the data repository) — never in app.js / core.js.
  * Works in the browser (global RoutineConfig) and in Node (module.exports).
  */
 (function (root) {
   'use strict';
   const RoutineConfig = {
     appName: '習慣きろく',
-    // the piano practice tracker that shares the spreadsheet
+    // the piano practice tracker that shares the data repository
     pianoAppUrl: 'https://propapagandhi-cyber.github.io/piano-log/',
     // people created when neither the cloud config nor the piano app has any (ids match piano-log's defaults)
     defaultPeople: [
@@ -29,7 +29,8 @@
     memoItem: 'memo',     // item id of the daily note
     quickTimes: 4,        // how many frequently used times to offer for a `time` item
     quickTimeDays: 60,    // …looking back this many days
-    postChunk: 400,       // entries per POST (imports are split)
+    dataRepoName: 'Routine-data',   // suggested name of the private data repository
+    pushDelayMs: 800,     // send this long after the last tap, so a run of taps is one write
     refreshMs: 20000,     // do not re-read the cloud more often than this
     memoSaveMs: 1200,     // save the note this long after typing stops
   };

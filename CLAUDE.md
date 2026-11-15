@@ -7,22 +7,23 @@
 
 - ドメイン: 家族それぞれの毎日の習慣（起床・運動・柔軟・英語・ピアノなど）を記録し、振り返る Web アプリ。
 - 対象: 家族（本人・子供）。スマホ・タブレット・PC のブラウザから使う。
-- スコープ: Claude Code が書くのは、ブラウザで動く静的 Web アプリ、Google スプレッドシート側の Apps Script、
-  過去の記録の変換ツール。「ピアノれんしゅう記録」（`piano-log`、`C:\ai\Sheet Music\練習記録アプリ`）の計測機能は含めない。
-- 主要技術: 素の HTML/CSS/JavaScript（ビルドなし）、Google Apps Script、GitHub Pages。詳細は下「技術スタック」。
+- スコープ: Claude Code が書くのは、ブラウザで動く静的 Web アプリと、過去の記録の変換ツール。「ピアノれんしゅう記録」（`piano-log`、`C:\ai\Sheet Music\練習記録アプリ`）の計測機能は含めない。
+- 主要技術: 素の HTML/CSS/JavaScript（ビルドなし）、GitHub Pages、GitHub REST API。詳細は下「技術スタック」。
+- データ: アプリ本体は公開リポジトリ、記録は**別の非公開リポジトリ**（データ用。`piano-log` と共有、ADR-0003）。
 
 ## ハードルール（不変条件・必ず守る）
 
-1. **仕様（`spec/`）の値はハードコードしない。** 既定値は `impl/src/config.js`、人ごとの項目は保存先の設定から読む。
+1. **仕様（`spec/`）の値はハードコードしない。** 既定値は `impl/src/config.js`、人ごとの項目は保存先の設定（`routine/config.json`）から読む。
 2. **人・項目の違いは設定で吸収する（ソフト一本化）。** 特定の人や項目の名前でコードを分岐させない。
-3. **記録・名前・メモ・保存先の URL をリポジトリに入れない。** リポジトリは公開。`original/` と `*.import.json` は
+3. **記録・名前・メモ・トークン・接続コードをこのリポジトリに入れない。** このリポジトリは公開。`original/` と `*.import.json` は
    `.gitignore` 済み。テストデータは作り物だけを使う。
-4. **`piano-log` を壊さない。** `apps-script.gs` は両アプリ共通。既存の呼び出し（`list`／`add`／`delete`／`settings`）と
-   シート「記録」の形を変えない。変更したら `piano-log` 側の `apps-script.gs` も同じ内容にする。
+4. **`piano-log` を壊さない。** `ghstore.js` は両アプリ共通で、同じ内容に保つ（正は本リポジトリ）。
+   `piano/` のファイルの形を変えるときは `schema` を上げ、古い形も読めるようにする。習慣きろくは `piano/` に書かない。
 5. **画面に出る文字列は日本語**、コード・コメント・ログは英語。
 6. **単位**: 日付は `YYYY-MM-DD`（端末の現地時間）、時刻は `HH:MM`（24時間）、ピアノは秒で持ち分で表示、
    更新日時は ISO 8601（UTC）。
-7. **保存先との境界は `app.js` の `cloudGet`／`cloudPost` だけ。** `core.js` は DOM・通信・localStorage を触らない。
+7. **保存先との境界は `ghstore.js`（GitHub とのやりとり）と `sync.js`（何をどのファイルに）だけ。**
+   `core.js`・`sync.js`・`ghstore.js` は DOM・localStorage を触らない。トークンは GitHub（`api.github.com`）以外に送らない。
 
 ## SSOT（単一の真実）
 
@@ -41,13 +42,14 @@
 
 | spec（正） | impl | テスト |
 |---|---|---|
-| `software.md` §データ・API | `src/apps-script.gs` | `tests/gas.test.js` |
-| `software.md` 起床の判定／ピアノの自動集計／同期のマージ／達成率 | `src/core.js` | `tests/core.test.js` |
+| `software.md` §データ・接続コード・GitHub API | `src/ghstore.js` | `tests/store.test.js` |
+| `software.md` 同期のマージ | `src/sync.js` | `tests/store.test.js`（偽の GitHub）、`tests/live-github.js`（本物・手動） |
+| `software.md` 起床の判定／ピアノの自動集計／達成率 | `src/core.js` | `tests/core.test.js` |
 | `software.md` 入力／月の一覧／取り込み | `src/app.js`, `src/index.html` | `tests/mock-server.js` でブラウザ確認 |
 | `software.md` 過去の記録の取り込み（変換） | `tools/convert_original.py` | 変換結果の件数・異常の報告 |
 
-**Mock-first**：保存先（Apps Script）は `tests/gas-harness.js` が偽のスプレッドシートの上で**本物の `apps-script.gs`** を動かす。
-単体テストもブラウザ確認も、Google アカウントなしで走る。
+**Mock-first**：保存先は `tests/fake-github.js`（GitHub API の必要な部分をメモリ上でまねる。sha の検査・認証つき）。
+単体テストもブラウザ確認も、ネットワークなしで走る。本物の GitHub での確認は `tests/live-github.js`（手動）。
 
 ## 何を読めば何が分かるか
 
@@ -62,7 +64,7 @@
 ## 技術スタック（確定）
 
 - 言語: JavaScript（ES2020、ブラウザ）。ビルド・フレームワークなし
-- 保存先: Google スプレッドシート＋Apps Script ウェブアプリ（`piano-log` と共通）
+- 保存先: GitHub の非公開リポジトリ＋GitHub REST API＋fine-grained personal access token（`piano-log` と共有）
 - 配信: GitHub Pages（GitHub Actions で `impl/src/` を公開）
 - テスト: Node.js 20+ の `node --test`
 - 変換ツール: Python 3（`openpyxl`）
@@ -73,7 +75,8 @@
 ## ビルド・実行・テスト
 
 - `node --test "impl/tests/*.test.js"` でテスト
-- `node impl/tests/mock-server.js` で起動（<http://localhost:8765/>、偽の保存先つき。保存先は `http://localhost:8765/exec`）
+- `node impl/tests/mock-server.js --demo` で起動（<http://localhost:8765/>、偽の GitHub つき。起動時に接続コードと設定用リンクを表示する）
+- `GH_TOKEN=… node impl/tests/live-github.js <owner> <repo>` で本物の GitHub に対する往復確認（手動）
 - `python impl/tools/convert_original.py` で過去の記録を取り込みファイルに変換（`original/` → `original/*.import.json`）
 
 ## スタイル
