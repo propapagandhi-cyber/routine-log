@@ -6,6 +6,10 @@ Sources (none of them is committed; see .gitignore):
   original/*YYYY.txt   notes, one day = a date line ("M/D") followed by a line of comma separated marks
   original/*.xlsx      one sheet per month ("4月" …): 日付, 曜日, 起床時刻, 運動, 柔軟, 英語, ピアノ, メモ
   original/*ルール.txt  the rules; each block starts with an item name and becomes that item's note
+  original/corrections.json  (optional) fixes laid over the result, kept with the records:
+      { "byDate": { "2026-05-04": { "exercise": "ゴルフ", "memo": "…" } },     item id → value ("memo": "" removes the note)
+        "options": { "exercise": ["…", "…"] },                                  the choices to offer for an item
+        "optionNotes": { "exercise": { "…": "what that choice stands for" } } }
 
 Where a day is in both, the spreadsheet wins and the notes fill what it leaves empty.
 The report at the end lists everything that had to be guessed.
@@ -206,6 +210,24 @@ def main():
         if memo:
             entries.append({"date": date, "item": MEMO, "result": "", "value": memo})
 
+    # hand-made corrections (e.g. what was really done on a day the sheet had no choice for)
+    fix_path = os.path.join(a.src, "corrections.json")
+    fixes = json.load(io.open(fix_path, encoding="utf-8")) if os.path.exists(fix_path) else {}
+    fixed = 0
+    for date, items in sorted(fixes.get("byDate", {}).items()):
+        for item, value in items.items():
+            if item != MEMO and item not in IDS:
+                report["notes"].append(f"{date} corrections.json: unknown item {item}")
+                continue
+            entries = [e for e in entries if not (e["date"] == date and e["item"] == item)]
+            if item != MEMO:
+                entries.append({"date": date, "item": item, "result": "done", "value": value})
+            elif value:
+                entries.append({"date": date, "item": MEMO, "result": "", "value": value})
+            fixed += 1
+    order = {i: n for n, i in enumerate(IDS + [MEMO])}
+    entries.sort(key=lambda e: (e["date"], order[e["item"]]))
+
     # item settings that follow from the data: the choices in use, the latest piano goal, the rules as notes
     rules = {}
     for path in glob.glob(os.path.join(a.src, "*ルール*.txt")):
@@ -222,7 +244,9 @@ def main():
             last = [e["value"] for e in entries if e["item"] == item and re.fullmatch(r"\d+分", e["value"])]
             it.update(type="piano", goalMin=int(last[-1][:-1]) if last else 10)
         else:
-            it.update(type="choice", options=[v for v, n in vals.most_common() if n >= 5])
+            it.update(type="choice", options=fixes.get("options", {}).get(item) or [v for v, n in vals.most_common() if n >= 5])
+            if fixes.get("optionNotes", {}).get(item):
+                it["optionNotes"] = fixes["optionNotes"][item]
         items.append(it)
 
     with io.open(out, "w", encoding="utf-8", newline="\n") as f:
@@ -234,6 +258,7 @@ def main():
     for item, name, _ in ITEMS:
         c = collections.Counter(e["result"] for e in entries if e["item"] == item)
         print(f"  {name}: done {c['done']}, fail {c['fail']}, time (judged at import) {c['auto']}")
+    print(f"  corrections applied: {fixed}")
     for it in items:
         print(f"  setting {it['name']}: " + json.dumps({k: v for k, v in it.items() if k not in ('id', 'name', 'note')}, ensure_ascii=False))
     print(f"  not listed on that day, imported as fail ({len(report['unlisted'])}): " + ", ".join(report["unlisted"]))

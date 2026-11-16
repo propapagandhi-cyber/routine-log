@@ -275,6 +275,7 @@
   }
   const dateLabel = (k) => `${+k.slice(5, 7)}月${+k.slice(8, 10)}日（${K.weekday(k)}）`;
   const BADGE = { [DONE]: '○ できた', [FAIL]: '× 失敗' };
+  const openNotes = new Set();   // "person/item" whose option notes are unfolded
 
   function renderDay() {
     dirty = false;
@@ -340,6 +341,16 @@
         if (v) setEntry(p, it, DONE, v);
       }, 'ghost'));
       ctl.append(mark(FAIL));
+      const notes = it.optionNotes || {};
+      if (st.result === DONE && notes[st.value]) ctl.append(h('p', { class: 'onote', text: `${st.value}：${notes[st.value]}` }));
+      const withNote = opts.filter((o) => notes[o]);
+      if (withNote.length) {
+        const key = `${p.id}/${it.id}`;
+        ctl.append(h('details', { class: 'olist', open: openNotes.has(key), ontoggle: (e) => { if (e.target.open) openNotes.add(key); else openNotes.delete(key); } }, [
+          h('summary', { text: 'えらぶ内容の説明' }),
+          ...withNote.map((o) => h('p', {}, [h('b', { text: o }), `：${notes[o]}`])),
+        ]));
+      }
     } else if (st.auto) {
       const pct = st.goalSec ? Math.min(100, Math.round((st.sec / st.goalSec) * 100)) : (st.sec ? 100 : 0);
       ctl.append(
@@ -525,10 +536,7 @@
         field('休日はこの時刻まで', h('input', { type: 'time', value: it.limitH || '', onchange: (e) => { it.limitH = e.target.value; } })),
       );
     } else if (it.type === 'choice') {
-      extra.push(field('えらぶ内容（「、」で区切る。空なら「できた」だけ）', h('input', {
-        type: 'text', value: (it.options || []).join('、'), placeholder: '例：筋トレ、外作業',
-        oninput: (e) => { it.options = e.target.value.split(/[、,，]/).map((s) => s.trim()).filter(Boolean); },
-      }), { flex: '1 1 100%' }));
+      extra.push(optionsEdit(it));
     } else {
       extra.push(field('目標（分）', h('input', { type: 'number', min: '0', max: '600', inputmode: 'numeric', value: String(it.goalMin || 0), oninput: (e) => { it.goalMin = Math.max(0, Number(e.target.value) || 0); } })));
     }
@@ -546,6 +554,35 @@
         h('button', { class: 'btn mini', type: 'button', text: '↓', 'aria-label': '下へ', disabled: ii === p.items.length - 1, onclick: () => move(1) }),
         h('button', { class: 'btn mini danger', type: 'button', text: '項目を消す', onclick: () => { p.items.splice(ii, 1); renderPeopleEdit(); } }),
       ]),
+    ]);
+  }
+  // the options of a choice item: a name and, if wanted, what it stands for
+  function optionsEdit(it) {
+    it.options = it.options || [];
+    it.optionNotes = it.optionNotes || {};
+    const rows = it.options.map((name, i) => h('div', { class: 'orow' }, [
+      h('input', {
+        class: 'inp', type: 'text', value: name, maxlength: '16', placeholder: '名前（例：筋トレ①）', 'aria-label': `えらぶ内容 ${i + 1} の名前`,
+        oninput: (e) => {
+          const old = it.options[i], next = e.target.value.trim();
+          it.options[i] = next;
+          if (old in it.optionNotes) { const n = it.optionNotes[old]; delete it.optionNotes[old]; it.optionNotes[next] = n; }   // the note follows the name
+        },
+      }),
+      h('button', { class: 'btn mini danger', type: 'button', text: '×', 'aria-label': `えらぶ内容「${name}」を消す`, onclick: () => {
+        delete it.optionNotes[it.options[i]];
+        it.options.splice(i, 1);
+        renderPeopleEdit();
+      } }),
+      h('textarea', {
+        class: 'inp', rows: '2', value: it.optionNotes[name] || '', placeholder: 'くわしい内容（例：腕立て・スクワット 各30回）。空でもよい', 'aria-label': `えらぶ内容 ${i + 1} の説明`,
+        oninput: (e) => { it.optionNotes[it.options[i]] = e.target.value; },   // a note typed before the name waits under ''
+      }),
+    ]));
+    return h('div', { class: 'opts' }, [
+      h('div', { class: 'optl', text: 'えらぶ内容と、その説明（ひとつもなければ「できた」だけ）' }),
+      ...rows,
+      h('div', { class: 'row' }, h('button', { class: 'btn mini', type: 'button', text: '＋ えらぶ内容を足す', onclick: () => { it.options.push(''); renderPeopleEdit(); } })),
     ]);
   }
   function renderImportWho() {

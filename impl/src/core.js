@@ -4,7 +4,7 @@
  *
  * Shapes (see spec/software.md):
  *   person  { id, name, color, pianoId, items: [item] }
- *   item    { id, name, type: 'time' | 'choice' | 'piano', note, limitW, limitH, options, goalMin }
+ *   item    { id, name, type: 'time' | 'choice' | 'piano', note, limitW, limitH, options, optionNotes, goalMin }
  *   entry   { id, date, person, item, result: 'done' | 'fail' | '', value, updatedAt }
  *   ctx     { entries: Map(id → entry), piano: Map('date|pianoId' → sec), since, today }
  */
@@ -168,7 +168,15 @@
   function cleanItem(it) {
     const o = { id: String(it.id), name: String(it.name || ''), type: ['time', 'choice', 'piano'].includes(it.type) ? it.type : 'choice', note: String(it.note || '') };
     if (o.type === 'time') { o.limitW = normTime(it.limitW); o.limitH = normTime(it.limitH); }
-    if (o.type === 'choice') o.options = (it.options || []).map((s) => String(s).trim()).filter(Boolean);
+    if (o.type === 'choice') {
+      o.options = [...new Set((it.options || []).map((s) => String(s).trim()).filter(Boolean))];
+      // what an option stands for (e.g. which exercises, how many times); only for options that exist
+      o.optionNotes = {};
+      for (const k of o.options) {
+        const n = String((it.optionNotes || {})[k] || '').trim();
+        if (n) o.optionNotes[k] = n;
+      }
+    }
     if (o.type === 'piano') o.goalMin = Math.max(0, Number(it.goalMin) || 0);
     return o;
   }
