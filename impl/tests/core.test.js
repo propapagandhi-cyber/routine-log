@@ -126,7 +126,10 @@ test('config: seeded from the piano people, else from the defaults', () => {
   assert.equal(d.people.length, 3);
   assert.equal(Core.newId('p', ['p1', 'p2', 'p4']), 'p3');
   const n = Core.normalizeConfig({ people: [{ id: 'a', items: [{ id: 'x', type: 'weird', options: [' a ', ''] }, { id: 't', type: 'time', limitW: '6:30' }] }] });
-  assert.deepEqual(n.people[0].items[0], { id: 'x', name: '', type: 'choice', note: '', options: ['a'] });
+  assert.deepEqual(n.people[0].items[0], { id: 'x', name: '', type: 'choice', note: '', options: ['a'], optionNotes: {} });
+  // notes per option: kept for options that exist, dropped for the rest; duplicate options collapse
+  const c2 = Core.cleanItem({ id: 'e', type: 'choice', options: ['A', 'B', 'A'], optionNotes: { A: ' 30回 ', B: '', gone: 'x' } });
+  assert.deepEqual([c2.options, c2.optionNotes], [['A', 'B'], { A: '30回' }]);
   assert.equal(n.people[0].items[1].limitW, '06:30');
 });
 
