@@ -107,4 +107,4 @@ node impl/tests/mock-server.js --demo     # http://localhost:8765/ （偽の Git
 
 ## 状態
 
-v1.0 を実装ずみ（ローカルと、本物の GitHub への読み書きを確認）。アプリの公開と実機での確認はこれから。未確定項目は `STATUS.md`。
+v1.0 を公開ずみ：<https://propapagandhi-cyber.github.io/routine-log/>。接続コードでの接続と実機での確認はこれから。未確定項目は `STATUS.md`。
